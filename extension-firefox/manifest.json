@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "InverseFill SL/TP Swap",
+  "version": "1.0.0",
+  "description": "Polls local InverseFill server and fills SL/TP ticket fields swapped on the trading terminal.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "inversefill@example.com"
+    }
+  },
+  "permissions": ["tabs", "scripting", "alarms"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

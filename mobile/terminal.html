@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>TradeX — USOIL Terminal (Demo)</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  :root {
+    --bg: #0F1722; --panel: #151E2B; --border: #273444;
+    --text: #E5EAF0; --muted: #94A3B8;
+    --up: #26A69A; --down: #EF5350; --buy: #38BDF8;
+  }
+  html, body { background: var(--bg); color: var(--text); }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow-x: hidden; }
+  .panel { background: var(--panel); border: 1px solid var(--border); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+  #chart { width: 100%; height: 400px; }
+  @media (min-width: 1024px) { #chart { height: 560px; } }
+  /* Bottom sheet */
+  #sheet { transition: transform .25s ease; }
+  /* Safe-area spacing for sticky bars */
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+  .tf-active { background: rgba(52,136,245,.18); color: #7FB3FF; border-color: rgba(52,136,245,.5); }
+  .tab-active { color: var(--text); border-color: var(--buy); }
+
+  /* ---- polish ---- */
+  body {
+    background:
+      radial-gradient(700px 320px at 10% -5%, rgba(56,189,248,.06), transparent 60%),
+      radial-gradient(700px 320px at 90% 0%, rgba(239,83,80,.05), transparent 60%),
+      var(--bg);
+  }
+  .tfbtn { transition: background .15s ease, color .15s ease, border-color .15s ease, transform .08s ease; }
+  .tfbtn:active { transform: scale(.94); }
+  .tf-active { box-shadow: 0 0 12px rgba(52,136,245,.25); }
+  .tabbtn { transition: color .15s ease; }
+  #barSell, #ordSell {
+    background: linear-gradient(180deg, #f2605e, #d63a3a);
+    box-shadow: 0 6px 20px rgba(239,83,80,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .08s ease, filter .15s ease;
+  }
+  #barBuy, #ordBuy {
+    background: linear-gradient(180deg, #5cc8fa, #0ea5e9);
+    box-shadow: 0 6px 20px rgba(56,189,248,.35), inset 0 1px 0 rgba(255,255,255,.25);
+    transition: transform .08s ease, filter .15s ease;
+  }
+  #barSell:active, #barBuy:active, #ordSell:active, #ordBuy:active { transform: scale(.96); filter: brightness(1.15); }
+  #sheet { box-shadow: 0 -16px 48px rgba(0,0,0,.55); }
+  @media (min-width: 1024px) { #sheet { box-shadow: none; } }
+  .grabber { width: 40px; height: 4px; border-radius: 4px; background: #334052; margin: 8px auto 0; }
+  input:focus, select:focus { box-shadow: 0 0 0 3px rgba(56,189,248,.12); }
+  button { transition: transform .08s ease, filter .15s ease, background .15s ease; }
+  button:active { transform: scale(.95); }
+  #toast { box-shadow: 0 12px 32px rgba(0,0,0,.55); border: 1px solid var(--border); }
+  #sheet::-webkit-scrollbar { width: 6px; }
+  #sheet::-webkit-scrollbar-thumb { background: #334052; border-radius: 6px; }
+  .logo-tile {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 900; color: #fff; font-size: 15px;
+    background: linear-gradient(135deg, #EF5350, #38BDF8);
+    box-shadow: 0 4px 14px rgba(56,189,248,.3);
+  }
+</style>
+</head>
+<body class="min-h-screen">
+
+<div class="mx-auto max-w-[1440px] lg:grid lg:grid-cols-[1fr_330px] lg:gap-3 lg:p-3">
+
+  <!-- ============ MAIN COLUMN ============ -->
+  <div class="min-w-0">
+
+    <!-- SECTION 1: MARKET HEADER -->
+    <header class="panel lg:rounded-lg border-x-0 lg:border-x">
+      <div class="flex items-center justify-between px-3 py-2">
+        <div class="flex items-center gap-2">
+          <span class="logo-tile">◈</span>
+          <span class="font-bold tracking-wide">TradeX</span>
+          <span class="ml-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] px-2 py-0.5 font-semibold tracking-wide">SIMULATED DATA</span>
+        </div>
+        <div class="flex items-center gap-1 text-[var(--muted)]">
+          <a href="/" class="text-[11px] px-2 py-1.5 rounded-md border border-[var(--border)]" title="Simple ticket controller">Simple</a>
+          <button aria-label="Notifications" class="p-1.5"><i data-lucide="bell" class="w-5 h-5"></i></button>
+          <button aria-label="Account" class="p-1.5"><i data-lucide="circle-user-round" class="w-5 h-5"></i></button>
+        </div>
+      </div>
+      <div class="px-3 pb-2.5 border-t border-[var(--border)] pt-2">
+        <div class="flex items-center justify-between">
+          <button class="flex items-center gap-1 font-semibold">USOIL <span class="text-[var(--muted)] text-xs">▾</span></button>
+          <span id="mktStatus" class="text-xs flex items-center gap-1.5 text-emerald-400"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>Sim feed on</span>
+        </div>
+        <div class="text-[11px] text-[var(--muted)]">USOIL — Crude Oil WTI</div>
+        <div class="flex items-end justify-between mt-1">
+          <div>
+            <span id="lastPrice" class="text-2xl font-bold tabular-nums">93.120</span>
+            <span id="dayChange" class="ml-2 text-sm tabular-nums text-[var(--down)]">−0.42% today</span>
+          </div>
+          <div class="text-right text-xs tabular-nums">
+            <div class="text-[var(--muted)]">Bid <span id="bidPx" class="text-[var(--text)]">93.120</span></div>
+            <div class="text-[var(--muted)]">Ask <span id="askPx" class="text-[var(--text)]">93.220</span></div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- TIMEFRAME TOOLBAR -->
+    <div class="panel lg:rounded-lg border-x-0 lg:border-x mt-0 lg:mt-3 px-2 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar" role="tablist" aria-label="Timeframes" id="tfBar">
+      <!-- buttons injected by JS -->
+      <div class="flex items-center gap-1 ml-auto pl-2 shrink-0 text-[var(--muted)]" id="tfTools">
+        <button id="btnIndicatorsQuick" aria-label="Indicators" class="p-1.5"><i data-lucide="activity" class="w-4 h-4"></i></button>
+        <button id="btnFullscreen" aria-label="Fullscreen chart" class="p-1.5"><i data-lucide="maximize-2" class="w-4 h-4"></i></button>
+      </div>
+    </div>
+
+    <!-- SECTION 2: CHART -->
+    <section class="panel lg:rounded-lg border-x-0 lg:border-x mt-0 lg:mt-3" id="chartSection" aria-label="Price chart">
+      <div class="px-3 pt-2 flex items-center justify-between text-xs tabular-nums">
+        <div id="ohlcLegend" class="text-[var(--muted)]">O <span class="text-[var(--text)]">–</span> H <span class="text-[var(--text)]">–</span> L <span class="text-[var(--text)]">–</span> C <span class="text-[var(--text)]">–</span></div>
+        <div id="chartState" class="text-[var(--muted)]">Loading…</div>
+      </div>
+      <div id="chart" class="mt-1"></div>
+      <div id="chartError" class="hidden px-3 py-6 text-center text-sm text-[var(--muted)]">
+        Chart library failed to load (CDN unreachable). Check your connection and reload.
+      </div>
+    </section>
+
+    <!-- SECTION 3: ANALYSIS TABS -->
+    <nav class="panel lg:rounded-lg border-x-0 lg:border-x mt-0 lg:mt-3 px-3 flex gap-5 text-sm" aria-label="Analysis">
+      <button data-tab="chart" class="tabbtn tab-active py-2.5 border-b-2 border-transparent text-[var(--muted)]">Chart</button>
+      <button data-tab="indicators" class="tabbtn py-2.5 border-b-2 border-transparent text-[var(--muted)]">Indicators</button>
+      <button data-tab="drawing" class="tabbtn py-2.5 border-b-2 border-transparent text-[var(--muted)]">Drawing</button>
+      <button data-tab="events" class="tabbtn py-2.5 border-b-2 border-transparent text-[var(--muted)]">Events</button>
+    </nav>
+
+    <section class="panel lg:rounded-lg border-x-0 lg:border-x border-t-0 px-3 py-3 text-sm min-h-[120px]">
+      <!-- Chart tab -->
+      <div data-pane="chart">
+        <div class="flex flex-wrap gap-2">
+          <button id="tglCrosshair" class="px-3 py-1.5 rounded-md border border-[var(--border)] text-xs">Crosshair: on</button>
+          <button id="btnFit" class="px-3 py-1.5 rounded-md border border-[var(--border)] text-xs">Reset view</button>
+          <span class="text-xs text-[var(--muted)] self-center">Drag to pan • Pinch/scroll to zoom • Tap a candle for OHLC</span>
+        </div>
+      </div>
+      <!-- Indicators tab -->
+      <div data-pane="indicators" class="hidden">
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <label class="flex items-center gap-2 panel rounded-md px-2.5 py-2"><input type="checkbox" id="indMA" class="accent-[#3488F5]" /> MA 20 <span class="text-[var(--muted)]">overlay</span></label>
+          <label class="flex items-center gap-2 panel rounded-md px-2.5 py-2"><input type="checkbox" id="indEMA" class="accent-[#3488F5]" /> EMA 50 <span class="text-[var(--muted)]">overlay</span></label>
+          <label class="flex items-center gap-2 panel rounded-md px-2.5 py-2"><input type="checkbox" id="indVol" checked class="accent-[#3488F5]" /> Volume <span class="text-[var(--muted)]">overlay</span></label>
+          <label class="flex items-center gap-2 panel rounded-md px-2.5 py-2"><input type="checkbox" id="indRSI" class="accent-[#3488F5]" /> RSI 14 <span class="text-[var(--muted)]">pane</span></label>
+          <label class="flex items-center gap-2 panel rounded-md px-2.5 py-2 col-span-2"><input type="checkbox" id="indMACD" class="accent-[#3488F5]" /> MACD 12·26·9 <span class="text-[var(--muted)]">pane (MACD replaces RSI pane)</span></label>
+        </div>
+      </div>
+      <!-- Drawing tab -->
+      <div data-pane="drawing" class="hidden">
+        <div class="flex flex-wrap gap-2 text-xs">
+          <button id="drawLevel" class="px-3 py-1.5 rounded-md border border-[var(--border)]">+ Level at last price</button>
+          <button id="drawSR" class="px-3 py-1.5 rounded-md border border-[var(--border)]">Auto S/R (swing H/L)</button>
+          <button id="drawClear" class="px-3 py-1.5 rounded-md border border-[var(--border)]">Clear drawings</button>
+        </div>
+        <p class="text-[11px] text-[var(--muted)] mt-2">Implemented: horizontal levels, auto support/resistance. Freehand trendlines: coming soon.</p>
+        <div id="drawList" class="text-xs text-[var(--muted)] mt-1"></div>
+      </div>
+      <!-- Events tab -->
+      <div data-pane="events" class="hidden">
+        <label class="flex items-center gap-2 text-xs mb-2"><input type="checkbox" id="evtMarkers" checked class="accent-[#3488F5]" /> Show markers on chart</label>
+        <ul id="evtList" class="space-y-1.5 text-xs"></ul>
+      </div>
+    </section>
+
+    <!-- SECTION 4a: MOBILE ACTION BAR -->
+    <div class="lg:hidden sticky bottom-0 safe-bottom panel border-x-0 border-b-0 mt-0">
+      <div class="grid grid-cols-2 gap-2 p-2.5">
+        <button id="barSell" class="rounded-lg bg-[var(--down)] text-white font-bold py-3 min-h-[44px]">SELL <span id="barBid" class="block text-xs font-normal opacity-90 tabular-nums">93.120</span></button>
+        <button id="barBuy" class="rounded-lg bg-[var(--buy)] text-white font-bold py-3 min-h-[44px]">BUY <span id="barAsk" class="block text-xs font-normal opacity-90 tabular-nums">93.220</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ORDER COLUMN (bottom sheet on mobile, sidebar on desktop) ============ -->
+  <div id="backdrop" class="hidden lg:hidden fixed inset-0 bg-black/60 z-40"></div>
+  <aside id="sheet" class="fixed lg:static z-50 lg:z-auto bottom-0 left-0 right-0 lg:right-auto translate-y-full lg:translate-y-0 panel border-b-0 lg:border-b rounded-t-2xl lg:rounded-lg max-h-[88vh] lg:max-h-none overflow-y-auto" aria-label="Order entry">
+    <div class="grabber lg:hidden"></div>
+    <div class="p-4 pt-2 lg:pt-4 lg:sticky lg:top-3">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-bold">Trade Execution <span class="ml-1 text-[10px] font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/15 rounded px-1.5 py-0.5">DEMO</span></h2>
+        <button id="sheetClose" class="lg:hidden p-2 -m-1 text-[var(--muted)]" aria-label="Close order panel"><i data-lucide="chevron-down" class="w-5 h-5"></i></button>
+      </div>
+      <p class="text-[11px] text-[var(--muted)] mb-3">Simulated ticket. Buy/Sell shows a demo confirmation — no real trade is executed.</p>
+
+      <label class="text-xs text-[var(--muted)]" for="ordType">Order type</label>
+      <select id="ordType" class="mt-1 mb-3 w-full bg-[#0F1722] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm min-h-[44px]">
+        <option value="market">Market</option>
+        <option value="limit" disabled>Limit (soon)</option>
+        <option value="stop" disabled>Stop (soon)</option>
+      </select>
+
+      <label class="text-xs text-[var(--muted)]" for="volInput">Volume (lots)</label>
+      <div class="mt-1 mb-3 flex items-stretch gap-2">
+        <button id="volMinus" class="panel rounded-lg px-4 min-h-[44px] min-w-[44px] text-lg" aria-label="Decrease volume">−</button>
+        <input id="volInput" type="number" value="0.01" min="0.01" step="0.01" class="flex-1 min-w-0 bg-[#0F1722] border border-[var(--border)] rounded-lg px-3 py-2 text-center font-bold tabular-nums min-h-[44px]" />
+        <button id="volPlus" class="panel rounded-lg px-4 min-h-[44px] min-w-[44px] text-lg" aria-label="Increase volume">+</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <label class="text-xs text-[var(--muted)]" for="slInput">Stop Loss</label>
+          <div class="mt-1 flex items-stretch gap-1">
+            <button id="slMinus" class="panel rounded-lg px-2.5 min-h-[44px] min-w-[40px]" aria-label="Decrease stop loss">−</button>
+            <input id="slInput" type="text" inputmode="decimal" placeholder="Optional" autocomplete="off" class="w-full min-w-0 bg-[#0F1722] border border-[var(--border)] rounded-lg px-2 py-2.5 text-sm tabular-nums text-center min-h-[44px]" />
+            <button id="slPlus" class="panel rounded-lg px-2.5 min-h-[44px] min-w-[40px]" aria-label="Increase stop loss">+</button>
+            <button id="slClear" class="rounded-lg px-2 min-h-[44px] text-[var(--muted)]" aria-label="Clear stop loss">✕</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-[var(--muted)]" for="tpInput">Take Profit</label>
+          <div class="mt-1 flex items-stretch gap-1">
+            <button id="tpMinus" class="panel rounded-lg px-2.5 min-h-[44px] min-w-[40px]" aria-label="Decrease take profit">−</button>
+            <input id="tpInput" type="text" inputmode="decimal" placeholder="Optional" autocomplete="off" class="w-full min-w-0 bg-[#0F1722] border border-[var(--border)] rounded-lg px-2 py-2.5 text-sm tabular-nums text-center min-h-[44px]" />
+            <button id="tpPlus" class="panel rounded-lg px-2.5 min-h-[44px] min-w-[40px]" aria-label="Increase take profit">+</button>
+            <button id="tpClear" class="rounded-lg px-2 min-h-[44px] text-[var(--muted)]" aria-label="Clear take profit">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <label class="text-xs text-[var(--muted)]" for="ordComment">Comment (optional)</label>
+      <input id="ordComment" type="text" placeholder="e.g. scalp-01" class="mt-1 mb-3 w-full bg-[#0F1722] border border-[var(--border)] rounded-lg px-3 py-2.5 text-sm min-h-[44px]" />
+
+      <label class="flex items-center gap-2 text-xs text-[var(--muted)] mb-1">
+        <input type="checkbox" id="mirrorToggle" checked class="accent-[#3488F5]" />
+        Mirror SL/TP swapped to laptop ticket <span id="mirrorState" class="text-[var(--muted)]">(via /values)</span>
+      </label>
+      <div id="siteQuote" class="text-xs text-[var(--muted)] mb-3 tabular-nums">Site: waiting for laptop ticket…</div>
+
+      <div id="ordSummary" class="text-xs panel rounded-lg p-2.5 mb-2 tabular-nums text-[var(--muted)]">Select BUY or SELL to preview.</div>
+      <div id="ordError" class="hidden text-xs text-red-400 mb-2" role="alert"></div>
+
+      <div class="grid grid-cols-2 gap-2 safe-bottom">
+        <button id="ordSell" class="rounded-lg bg-[var(--down)] text-white font-bold py-2.5 min-h-[44px]">SELL BY MARKET<span class="block text-[10px] font-normal opacity-90">taps → site BUYS</span></button>
+        <button id="ordBuy" class="rounded-lg bg-[var(--buy)] text-white font-bold py-2.5 min-h-[44px]">BUY BY MARKET<span class="block text-[10px] font-normal opacity-90">taps → site SELLS</span></button>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Demo confirmation modal -->
+<div id="confirmWrap" class="hidden fixed inset-0 z-[60] flex items-end lg:items-center justify-center p-3">
+  <div class="absolute inset-0 bg-black/60" data-close-confirm></div>
+  <div class="relative panel rounded-2xl p-5 w-full max-w-sm">
+    <h3 class="font-bold text-lg">Order received <span class="text-[10px] align-middle text-amber-300 border border-amber-500/40 bg-amber-500/15 rounded px-1.5 py-0.5">DEMO — NOT A REAL TRADE</span></h3>
+    <div id="confirmBody" class="text-sm mt-2 space-y-1 tabular-nums"></div>
+    <button data-close-confirm class="mt-4 w-full rounded-lg bg-[var(--buy)] text-white font-bold py-3 min-h-[44px]">Done</button>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-24 lg:bottom-8 left-1/2 -translate-x-1/2 z-[70] bg-[#222b36] border border-[var(--border)] text-sm px-4 py-2.5 rounded-xl max-w-[90vw] text-center"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- constants ---------- */
+  var BG = '#0F1722', BORDER = '#273444', MUTED = '#94A3B8';
+  var UP = '#26A69A', DOWN = '#EF5350', BUY = '#3488F5';
+  var SPREAD = 0.10, BASE_PX = 93.120, DAY_OPEN = 93.512;
+  var TFS = [
+    { id: '1m',  label: '1m',  step: 60,    n: 320, vol: 0.045 },
+    { id: '5m',  label: '5m',  step: 300,   n: 300, vol: 0.10 },
+    { id: '15m', label: '15m', step: 900,   n: 280, vol: 0.17 },
+    { id: '30m', label: '30m', step: 1800,  n: 260, vol: 0.24 },
+    { id: '1h',  label: '1h',  step: 3600,  n: 240, vol: 0.34 },
+    { id: '4h',  label: '4h',  step: 14400, n: 220, vol: 0.65 },
+    { id: '1D',  label: '1D',  step: 86400, n: 200, vol: 1.10 },
+    { id: '1W',  label: '1W',  step: 604800, n: 160, vol: 2.60 },
+    { id: '1M',  label: '1M',  step: 2592000, n: 120, vol: 5.00 }
+  ];
+  var SAMPLE_EVENTS = [
+    { off: 150, title: 'OPEC meeting minutes', impact: 'high' },
+    { off: 90,  title: 'US crude inventory report', impact: 'high' },
+    { off: 45,  title: 'Fed speaker: energy outlook', impact: 'med' },
+    { off: 12,  title: 'Rig count update', impact: 'low' }
+  ];
+
+  /* ---------- tiny helpers ---------- */
+  function $(id) { return document.getElementById(id); }
+  function fmt(n, d) { return Number(n).toFixed(d == null ? 3 : d); }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 2400);
+  }
+
+  /* ---------- demo OHLCV data (seeded, valid OHLC) ---------- */
+  function genCandles(tf, seedIdx) {
+    var rnd = mulberry32(1234 + seedIdx * 777);
+    var now = Math.floor(Date.now() / 1000);
+    var start = Math.floor(now / tf.step) * tf.step - tf.step * (tf.n - 1);
+    var out = [], px = BASE_PX + (rnd() - 0.5) * tf.vol * 4;
+    for (var i = 0; i < tf.n; i++) {
+      var o = px;
+      var drift = (rnd() - 0.5) * 2 * tf.vol;
+      var c = Math.max(0.001, o + drift);
+      var h = Math.max(o, c) + rnd() * tf.vol * 0.9;
+      var l = Math.min(o, c) - rnd() * tf.vol * 0.9;
+      var v = Math.round(40 + rnd() * 160);
+      out.push({ time: start + i * tf.step, open: +o.toFixed(3), high: +h.toFixed(3), low: +l.toFixed(3), close: +c.toFixed(3), volume: v });
+      px = c;
+    }
+    return out;
+  }
+
+  /* ---------- indicator math ---------- */
+  function sma(vals, p) {
+    var out = [], acc = 0;
+    for (var i = 0; i < vals.length; i++) {
+      acc += vals[i];
+      if (i >= p) acc -= vals[i - p];
+      out.push(i >= p - 1 ? acc / p : null);
+    }
+    return out;
+  }
+  function ema(vals, p) {
+    var out = [], k = 2 / (p + 1), prev = null;
+    for (var i = 0; i < vals.length; i++) {
+      prev = prev == null ? vals[i] : vals[i] * k + prev * (1 - k);
+      out.push(i >= p - 1 ? prev : null);
+    }
+    return out;
+  }
+  function rsi(closes, p) {
+    p = p || 14;
+    var out = [], gains = 0, losses = 0;
+    for (var i = 1; i < closes.length; i++) {
+      var ch = closes[i] - closes[i - 1];
+      var g = ch > 0 ? ch : 0, l = ch < 0 ? -ch : 0;
+      if (i <= p) { gains += g; losses += l; }
+      else {
+        gains = (gains * (p - 1) + g) / p;
+        losses = (losses * (p - 1) + l) / p;
+      }
+      if (i < p) out.push(null);
+      else {
+        var rs = losses === 0 ? 100 : gains / losses;
+        out.push(100 - 100 / (1 + rs));
+      }
+    }
+    out.unshift(null);
+    return out;
+  }
+  function macd(closes) {
+    var e12 = ema(closes, 12), e26 = ema(closes, 26), line = [], i;
+    for (i = 0; i < closes.length; i++) {
+      line.push(e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null);
+    }
+    var valid = line.filter(function (v) { return v != null; });
+    var sigFull = ema(valid, 9), sig = [], h = [];
+    var pad = line.length - valid.length, k = 0;
+    for (i = 0; i < line.length; i++) {
+      if (i < pad + 8) { sig.push(null); h.push(null); }
+      else { var s = sigFull[k++]; sig.push(s); h.push(line[i] - s); }
+    }
+    return { line: line, signal: sig, hist: h };
+  }
+
+  /* ---------- state ---------- */
+  var state = {
+    tf: TFS[0], data: [], byTime: {},
+    dir: null, drawings: [], slLine: null, tpLine: null,
+    showMarkers: true, crosshair: true, lastTick: 0
+  };
+
+  /* ---------- chart setup ---------- */
+  var chart = null, candle = null, volS = null, maS = null, emaS = null;
+  var rsiS = null, macdH = null, macdL = null, macdSig = null;
+  var chartStateEl = $('chartState'), legendEl = $('ohlcLegend');
+
+  function lastClose() { return state.data.length ? state.data[state.data.length - 1].close : BASE_PX; }
+
+  function initChart() {
+    if (!window.LightweightCharts) { $('chartError').classList.remove('hidden'); chartStateEl.textContent = 'Unavailable'; return false; }
+    var el = $('chart');
+    chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth, height: el.clientHeight,
+      layout: { background: { type: 'solid', color: BG }, textColor: MUTED, fontSize: 11, fontFamily: "-apple-system,'Segoe UI',Roboto,sans-serif" },
+      grid: { vertLines: { color: 'rgba(39,52,68,0.55)' }, horzLines: { color: 'rgba(39,52,68,0.55)' } },
+      crosshair: { mode: 0, vertLine: { color: '#5b6b7f', labelBackgroundColor: '#2d3642' }, horzLine: { color: '#5b6b7f', labelBackgroundColor: '#2d3642' } },
+      rightPriceScale: { borderColor: BORDER },
+      timeScale: { borderColor: BORDER, timeVisible: true, secondsVisible: false }
+    });
+    candle = chart.addCandlestickSeries({
+      upColor: UP, downColor: DOWN, borderVisible: false,
+      wickUpColor: UP, wickDownColor: DOWN,
+      priceFormat: { type: 'price', precision: 3, minMove: 0.001 }
+    });
+    volS = chart.addHistogramSeries({ priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false });
+    maS = chart.addLineSeries({ color: '#F5C542', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    emaS = chart.addLineSeries({ color: '#B469FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    rsiS = chart.addLineSeries({ color: '#7FB3FF', lineWidth: 1, priceScaleId: 'osc', priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+    macdH = chart.addHistogramSeries({ priceScaleId: 'osc', priceLineVisible: false, lastValueVisible: false });
+    macdL = chart.addLineSeries({ color: '#F5C542', lineWidth: 1, priceScaleId: 'osc', priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    macdSig = chart.addLineSeries({ color: '#EF5350', lineWidth: 1, priceScaleId: 'osc', priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+
+    chart.subscribeCrosshairMove(function (param) {
+      if (!state.crosshair || !param.time) { paintLegend(state.data[state.data.length - 1]); return; }
+      var d = state.byTime[param.time];
+      if (d) paintLegend(d);
+    });
+
+    new ResizeObserver(function () {
+      if (chart) chart.resize(el.clientWidth, el.clientHeight);
+    }).observe(el);
+
+    chartStateEl.textContent = 'Simulated • ' + state.tf.label;
+    return true;
+  }
+
+  function paintLegend(d) {
+    if (!d) return;
+    var col = d.close >= d.open ? UP : DOWN;
+    legendEl.innerHTML = 'O <span class="text-[var(--text)]">' + fmt(d.open) + '</span>  H <span class="text-[var(--text)]">' +
+      fmt(d.high) + '</span>  L <span class="text-[var(--text)]">' + fmt(d.low) + '</span>  C <span style="color:' + col + '">' + fmt(d.close) + '</span>';
+  }
+
+  /* ---------- render pipeline ---------- */
+  function setSeriesData() {
+    var d = state.data, closes = d.map(function (c) { return c.close; });
+    state.byTime = {};
+    d.forEach(function (c) { state.byTime[c.time] = c; });
+
+    candle.setData(d);
+    paintLegend(d[d.length - 1]);
+
+    // volume
+    if ($('indVol').checked) {
+      volS.setData(d.map(function (c) {
+        return { time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(38,166,154,0.5)' : 'rgba(239,83,80,0.5)' };
+      }));
+    } else volS.setData([]);
+
+    // MA / EMA
+    var m = sma(closes, 20);
+    maS.setData($('indMA').checked ? d.filter(function (_, i) { return m[i] != null; }).map(function (c, j, arr) {
+      void arr; var i = d.indexOf(c); return { time: c.time, value: +m[i].toFixed(3) };
+    }) : []);
+    var e = ema(closes, 50);
+    emaS.setData($('indEMA').checked ? d.filter(function (_, i) { return e[i] != null; }).map(function (c) {
+      var i = d.indexOf(c); return { time: c.time, value: +e[i].toFixed(3) };
+    }) : []);
+
+    // oscillators (MACD wins if both checked)
+    var useMACD = $('indMACD').checked, useRSI = $('indRSI').checked && !useMACD;
+    if (useRSI) {
+      var r = rsi(closes, 14);
+      rsiS.setData(d.filter(function (_, i) { return r[i] != null; }).map(function (c) {
+        var i = d.indexOf(c); return { time: c.time, value: +r[i].toFixed(2) };
+      }));
+      rsiS.createPriceLine({ price: 70, color: 'rgba(239,83,80,0.6)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+      rsiS.createPriceLine({ price: 30, color: 'rgba(38,166,154,0.6)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+    } else rsiS.setData([]);
+    if (useMACD) {
+      var mc = macd(closes);
+      macdH.setData(d.map(function (c, i) {
+        return { time: c.time, value: mc.hist[i] == null ? 0 : +mc.hist[i].toFixed(4), color: (mc.hist[i] || 0) >= 0 ? 'rgba(38,166,154,0.55)' : 'rgba(239,83,80,0.55)' };
+      }).filter(function (_, i) { return mc.hist[i] != null; }));
+      macdL.setData(d.filter(function (_, i) { return mc.line[i] != null; }).map(function (c) {
+        var i = d.indexOf(c); return { time: c.time, value: +mc.line[i].toFixed(4) };
+      }));
+      macdSig.setData(d.filter(function (_, i) { return mc.signal[i] != null; }).map(function (c) {
+        var i = d.indexOf(c); return { time: c.time, value: +mc.signal[i].toFixed(4) };
+      }));
+    } else { macdH.setData([]); macdL.setData([]); macdSig.setData([]); }
+
+    // scale margins
+    var volOn = $('indVol').checked, oscOn = useRSI || useMACD;
+    chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: volOn || oscOn ? 0.3 : 0.08 } });
+    chart.priceScale('vol').applyOptions({ scaleMargins: { top: volOn && oscOn ? 0.72 : 0.82, bottom: volOn && oscOn ? 0.16 : 0 } });
+    chart.priceScale('osc').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+
+    renderMarkers();
+    redrawDrawings();
+    refreshSLTPLines();
+    chart.timeScale().scrollToRealTime();
+  }
+
+  function renderMarkers() {
+    if (!state.showMarkers) { candle.setMarkers([]); renderEventList(); return; }
+    var n = state.data.length;
+    var marks = SAMPLE_EVENTS.filter(function (ev) { return ev.off < n; }).map(function (ev, i) {
+      var bar = state.data[n - 1 - ev.off];
+      return { time: bar.time, position: 'belowBar', color: ev.impact === 'high' ? '#F5C542' : MUTED, shape: 'circle', text: 'E' + (i + 1) };
+    });
+    candle.setMarkers(marks);
+    renderEventList();
+  }
+
+  function renderEventList() {
+    var n = state.data.length, ul = $('evtList');
+    ul.innerHTML = '';
+    SAMPLE_EVENTS.filter(function (ev) { return ev.off < n; }).forEach(function (ev, i) {
+      var bar = state.data[n - 1 - ev.off];
+      var dt = new Date(bar.time * 1000);
+      var li = document.createElement('li');
+      li.className = 'panel rounded-md px-2.5 py-2 flex items-center gap-2';
+      var dot = ev.impact === 'high' ? '#F5C542' : ev.impact === 'med' ? '#7FB3FF' : MUTED;
+      li.innerHTML = '<span class="w-2 h-2 rounded-full inline-block" style="background:' + dot + '"></span>' +
+        '<span class="font-semibold">E' + (i + 1) + '</span><span>' + ev.title + ' (sample)</span>' +
+        '<span class="ml-auto text-[var(--muted)] tabular-nums">' + dt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</span>';
+      ul.appendChild(li);
+    });
+  }
+
+  /* ---------- drawings (horizontal levels) ---------- */
+  function addLevel(price, title, color) {
+    var line = candle.createPriceLine({ price: price, color: color || '#F5C542', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: title || '' });
+    state.drawings.push({ price: price, title: title || '', color: color || '#F5C542', line: line });
+    renderDrawList();
+  }
+  function redrawDrawings() {
+    state.drawings.forEach(function (d) {
+      d.line = candle.createPriceLine({ price: d.price, color: d.color, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: d.title });
+    });
+    renderDrawList();
+  }
+  function renderDrawList() {
+    $('drawList').textContent = state.drawings.length
+      ? state.drawings.map(function (d) { return (d.title || 'Level') + ' @ ' + fmt(d.price); }).join(' • ')
+      : 'No drawings yet.';
+  }
+
+  /* ---------- SL/TP price lines on chart ---------- */
+  function refreshSLTPLines() {
+    var sl = parseFloat($('slInput').value), tp = parseFloat($('tpInput').value);
+    if (state.slLine) { try { candle.removePriceLine(state.slLine); } catch (e) {} state.slLine = null; }
+    if (state.tpLine) { try { candle.removePriceLine(state.tpLine); } catch (e) {} state.tpLine = null; }
+    if (isFinite(sl)) state.slLine = candle.createPriceLine({ price: sl, color: '#E67E22', lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: 'SL' });
+    if (isFinite(tp)) state.tpLine = candle.createPriceLine({ price: tp, color: '#3488F5', lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: 'TP' });
+  }
+
+  /* ---------- header / prices / tick simulation ---------- */
+  function refreshHeader() {
+    var px = lastClose();
+    var bid = px - SPREAD / 2, ask = px + SPREAD / 2;
+    $('lastPrice').textContent = fmt(px);
+    var chg = (px - DAY_OPEN) / DAY_OPEN * 100;
+    var dc = $('dayChange');
+    dc.textContent = (chg < 0 ? '−' : '+') + Math.abs(chg).toFixed(2) + '% today';
+    dc.className = 'ml-2 text-sm tabular-nums ' + (chg < 0 ? 'text-[var(--down)]' : 'text-[#26A69A]');
+    $('bidPx').textContent = fmt(bid); $('askPx').textContent = fmt(ask);
+    $('barBid').textContent = fmt(bid); $('barAsk').textContent = fmt(ask);
+    return { px: px, bid: bid, ask: ask };
+  }
+  function tick() {
+    if (!state.data.length || !chart) return;
+    var rnd = Math.random;
+    var tf = state.tf;
+    var last = state.data[state.data.length - 1];
+    var move = (rnd() - 0.5) * 2 * tf.vol * 0.35;
+    last.close = Math.max(0.001, +(last.close + move).toFixed(3));
+    last.high = Math.max(last.high, last.close);
+    last.low = Math.min(last.low, last.close);
+    candle.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
+    state.byTime[last.time] = last;
+    paintLegend(last);
+    refreshHeader();
+  }
+
+  /* ---------- timeframe switching ---------- */
+  function buildTfBar() {
+    var bar = $('tfBar'), tools = $('tfTools');
+    TFS.forEach(function (tf, i) {
+      var b = document.createElement('button');
+      b.textContent = tf.label;
+      b.setAttribute('role', 'tab');
+      b.className = 'tfbtn shrink-0 px-3 py-1.5 rounded-md border border-[var(--border)] text-xs tabular-nums min-h-[36px]' + (i === 0 ? ' tf-active' : '');
+      b.addEventListener('click', function () { switchTF(i); });
+      bar.insertBefore(b, tools);
+    });
+  }
+  function switchTF(i) {
+    state.tf = TFS[i];
+    state.data = genCandles(state.tf, i);
+    var btns = document.querySelectorAll('.tfbtn');
+    btns.forEach(function (b, j) { b.classList.toggle('tf-active', j === i); });
+    chartStateEl.textContent = 'Simulated • ' + state.tf.label;
+    setSeriesData();
+    refreshHeader();
+    updateSummary();
+  }
+
+  /* ---------- order form ---------- */
+  function num(v) { var x = parseFloat(v); return isFinite(x) ? x : null; }
+  function volume() {
+    var v = parseFloat($('volInput').value);
+    return isFinite(v) && v > 0 ? v : null;
+  }
+  function validate(dir) {
+    var px = lastClose(), sl = num($('slInput').value.trim()), tp = num($('tpInput').value.trim());
+    var v = volume();
+    if (v == null) return 'Volume must be a number greater than 0.';
+    if (dir === 'buy') {
+      if (sl != null && sl >= px) return 'For BUY, Stop Loss must be below the current price (' + fmt(px) + ').';
+      if (tp != null && tp <= px) return 'For BUY, Take Profit must be above the current price (' + fmt(px) + ').';
+    } else {
+      if (sl != null && sl <= px) return 'For SELL, Stop Loss must be above the current price (' + fmt(px) + ').';
+      if (tp != null && tp >= px) return 'For SELL, Take Profit must be below the current price (' + fmt(px) + ').';
+    }
+    return null;
+  }
+  function updateSummary() {
+    var box = $('ordSummary'), err = $('ordError');
+    var px = lastClose(), v = volume();
+    err.classList.add('hidden');
+    if (!state.dir) { box.textContent = 'Select BUY or SELL to preview.'; return; }
+    var fill = state.dir === 'buy' ? px + SPREAD / 2 : px - SPREAD / 2;
+    var sl = $('slInput').value.trim() || '—', tp = $('tpInput').value.trim() || '—';
+    box.innerHTML = '<span class="font-semibold text-[var(--text)]">' + state.dir.toUpperCase() + '</span> USOIL @ ~' + fmt(fill) +
+      ' • Vol ' + (v == null ? '—' : v.toFixed(2)) + ' lots<br/>SL ' + sl + ' • TP ' + tp +
+      '<br/><span class="text-[11px]">Est. exposure ≈ 1 lot = 100 bbl (demo figure)</span>' +
+      '<br/><span class="text-[11px]">Tap ' + state.dir.toUpperCase() + ' BY MARKET again to execute (site takes the opposite side).</span>';
+    var msg = validate(state.dir);
+    if (msg) { err.textContent = msg; err.classList.remove('hidden'); }
+  }
+  function chooseDir(dir) {
+    state.dir = dir;
+    $('ordBuy').style.outline = dir === 'buy' ? '2px solid #7FB3FF' : '';
+    $('ordSell').style.outline = dir === 'sell' ? '2px solid #FF9B9B' : '';
+    updateSummary();
+  }
+  function confirmOrder() {
+    if (!state.dir) { toast('Choose BUY or SELL first.'); return; }
+    var msg = validate(state.dir);
+    updateSummary();
+    if (msg) { toast(msg); return; }
+    mirrorAction(state.dir); // working execution: laptop fills ticket, clicks opposite button
+    var px = lastClose();
+    var fill = state.dir === 'buy' ? px + SPREAD / 2 : px - SPREAD / 2;
+    $('confirmBody').innerHTML =
+      '<div>Direction: <b>' + state.dir.toUpperCase() + '</b> USOIL</div>' +
+      '<div>Fill (simulated): <b>' + fmt(fill) + '</b></div>' +
+      '<div>Volume: <b>' + volume().toFixed(2) + '</b> lots</div>' +
+      '<div>Stop Loss: <b>' + ($('slInput').value.trim() || '—') + '</b></div>' +
+      '<div>Take Profit: <b>' + ($('tpInput').value.trim() || '—') + '</b></div>' +
+      ($('ordComment').value.trim() ? '<div>Comment: <b>' + $('ordComment').value.trim().replace(/</g, '&lt;') + '</b></div>' : '') +
+      '<div class="text-[var(--muted)]">Sent to laptop: ticket fills swapped, opposite side executes.</div>';
+    $('confirmWrap').classList.remove('hidden');
+  }
+
+  /* ---------- InverseFill mirror (same-origin /values, swapped server-side) ----------
+     Every control propagates: typing (debounced), steppers + volume (instant),
+     ✕-clear or deleting text (instant — empty string CLEARS the site field). */
+  var mirrorTimer = null;
+  function mirrorPayload() {
+    return { sl: $('slInput').value.trim(), tp: $('tpInput').value.trim(), volume: $('volInput').value.trim() };
+  }
+  function mirrorSend() {
+    clearTimeout(mirrorTimer);
+    if (!$('mirrorToggle').checked) { $('mirrorState').textContent = '(mirror off)'; return; }
+    var p = mirrorPayload();
+    var t0 = performance.now();
+    fetch('/values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function () { $('mirrorState').textContent = '(mirrored ✓ ' + Math.round(performance.now() - t0) + 'ms, swapped on laptop)'; })
+      .catch(function () { $('mirrorState').textContent = '(mirror failed — laptop server unreachable)'; });
+  }
+  function mirror() {
+    clearTimeout(mirrorTimer);
+    mirrorTimer = setTimeout(mirrorSend, 600);
+  }
+  // Working market order: same payload + action → site fills ticket, then clicks the OPPOSITE button.
+  function mirrorAction(dir) {
+    clearTimeout(mirrorTimer);
+    if (!$('mirrorToggle').checked) { $('mirrorState').textContent = '(mirror off — demo only)'; return; }
+    var p = mirrorPayload();
+    p.action = dir;
+    p.comment = $('ordComment').value.trim();
+    fetch('/values', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function () {
+        $('mirrorState').textContent = dir === 'buy'
+          ? '(BUY sent ✓ — site SELLS, swapped)'
+          : '(SELL sent ✓ — site BUYS, swapped)';
+      })
+      .catch(function () { $('mirrorState').textContent = '(order failed — laptop server unreachable)'; });
+  }
+
+  /* ---------- sheet open/close ---------- */
+  function openSheet() {
+    $('sheet').classList.remove('translate-y-full');
+    $('backdrop').classList.remove('hidden');
+  }
+  function closeSheet() {
+    if (window.innerWidth >= 1024) return; // sidebar always visible on desktop
+    $('sheet').classList.add('translate-y-full');
+    $('backdrop').classList.add('hidden');
+  }
+
+  /* ---------- wire up ---------- */
+  function init() {
+    if (window.lucide) lucide.createIcons();
+    buildTfBar();
+    if (!initChart()) return;
+    state.data = genCandles(state.tf, 0);
+    setSeriesData();
+    refreshHeader();
+
+    document.querySelectorAll('.tabbtn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.tabbtn').forEach(function (b) { b.classList.remove('tab-active'); b.classList.add('text-[var(--muted)]'); });
+        btn.classList.add('tab-active'); btn.classList.remove('text-[var(--muted)]');
+        var tab = btn.getAttribute('data-tab');
+        document.querySelectorAll('[data-pane]').forEach(function (p) {
+          p.classList.toggle('hidden', p.getAttribute('data-pane') !== tab);
+        });
+      });
+    });
+
+    ['indMA', 'indEMA', 'indVol', 'indRSI', 'indMACD'].forEach(function (id) {
+      $(id).addEventListener('change', setSeriesData);
+    });
+    $('evtMarkers').addEventListener('change', function () { state.showMarkers = this.checked; renderMarkers(); });
+    $('tglCrosshair').addEventListener('click', function () {
+      state.crosshair = !state.crosshair;
+      this.textContent = 'Crosshair: ' + (state.crosshair ? 'on' : 'off');
+      chart.applyOptions({ crosshair: { mode: state.crosshair ? 0 : 2 } });
+    });
+    $('btnFit').addEventListener('click', function () { chart.timeScale().fitContent(); });
+    $('btnFullscreen').addEventListener('click', function () {
+      var s = $('chartSection');
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (s.requestFullscreen) s.requestFullscreen();
+    });
+    $('btnIndicatorsQuick').addEventListener('click', function () {
+      document.querySelector('[data-tab="indicators"]').click();
+      document.querySelector('[data-tab="indicators"]').scrollIntoView({ block: 'nearest' });
+    });
+
+    $('drawLevel').addEventListener('click', function () { addLevel(lastClose(), 'Level'); toast('Level added at ' + fmt(lastClose())); });
+    $('drawSR').addEventListener('click', function () {
+      var win = state.data.slice(-100), hi = -Infinity, lo = Infinity;
+      win.forEach(function (c) { hi = Math.max(hi, c.high); lo = Math.min(lo, c.low); });
+      addLevel(hi, 'R', '#EF5350'); addLevel(lo, 'S', '#26A69A');
+      toast('S/R added: R ' + fmt(hi) + ' / S ' + fmt(lo));
+    });
+    $('drawClear').addEventListener('click', function () {
+      state.drawings.forEach(function (d) { try { candle.removePriceLine(d.line); } catch (e) {} });
+      state.drawings = []; renderDrawList();
+    });
+
+    // volume stepper (propagates instantly — site volume follows)
+    function stepVol(d) {
+      var v = volume() || 0;
+      $('volInput').value = Math.max(0.01, +(v + d).toFixed(2));
+      updateSummary();
+      mirrorSend();
+    }
+    $('volMinus').addEventListener('click', function () { stepVol(-0.01); });
+    $('volPlus').addEventListener('click', function () { stepVol(0.01); });
+    $('volInput').addEventListener('input', function () { updateSummary(); mirror(); });
+
+    // SL/TP steppers (propagate instantly — site fields follow, swapped)
+    function stepPrice(id, d) {
+      var cur = num($(id).value.trim());
+      if (cur == null) cur = lastClose();
+      $(id).value = fmt(cur + d);
+      refreshSLTPLines(); updateSummary(); mirrorSend();
+    }
+    function clearPrice(id) {
+      $(id).value = '';
+      refreshSLTPLines(); updateSummary(); mirrorSend(); // '' clears the site field too
+      toast('Cleared — site field clears too.');
+    }
+    $('slMinus').addEventListener('click', function () { stepPrice('slInput', -0.01); });
+    $('slPlus').addEventListener('click', function () { stepPrice('slInput', 0.01); });
+    $('slClear').addEventListener('click', function () { clearPrice('slInput'); });
+    $('tpMinus').addEventListener('click', function () { stepPrice('tpInput', -0.01); });
+    $('tpPlus').addEventListener('click', function () { stepPrice('tpInput', 0.01); });
+    $('tpClear').addEventListener('click', function () { clearPrice('tpInput'); });
+
+    // SL/TP: chart lines + validation + mirror
+    ['slInput', 'tpInput'].forEach(function (id) {
+      $(id).addEventListener('input', function () { refreshSLTPLines(); updateSummary(); mirror(); });
+    });
+    $('mirrorToggle').addEventListener('change', function () {
+      $('mirrorState').textContent = this.checked ? '(via /values)' : '(mirror off)';
+    });
+
+    $('ordBuy').addEventListener('click', function () { chooseDir('buy'); });
+    $('ordSell').addEventListener('click', function () { chooseDir('sell'); });
+    $('barBuy').addEventListener('click', function () { chooseDir('buy'); openSheet(); });
+    $('barSell').addEventListener('click', function () { chooseDir('sell'); openSheet(); });
+    $('sheetClose').addEventListener('click', closeSheet);
+    $('backdrop').addEventListener('click', closeSheet);
+
+    // confirm on second tap of the selected side (summary tells the user)
+    var lastTap = { dir: null, t: 0 };
+    [['ordBuy', 'buy'], ['ordSell', 'sell']].forEach(function (pair) {
+      $(pair[0]).addEventListener('click', function () {
+        var now = Date.now();
+        if (state.dir === pair[1] && now - lastTap.t < 600 && lastTap.dir === pair[1]) confirmOrder();
+        lastTap = { dir: pair[1], t: now };
+      });
+    });
+
+    document.querySelectorAll('[data-close-confirm]').forEach(function (b) {
+      b.addEventListener('click', function () { $('confirmWrap').classList.add('hidden'); });
+    });
+
+    setInterval(tick, 2000);
+    updateSummary();
+
+    // Live site quote (laptop extension pushes ticket bid/ask → same-origin GET /quote)
+    setInterval(function () {
+      fetch('/quote', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+        .then(function (q) {
+          if (q && q.bid) {
+            var s = 'Site live: Bid ' + q.bid + ' Ask ' + q.ask;
+            if (q.equity) s += ' • Eq ' + q.equity;
+            $('siteQuote').textContent = s;
+          }
+        })
+        .catch(function () {});
+    }, 3000);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>

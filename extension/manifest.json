@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "InverseFill SL/TP Swap",
+  "version": "1.0.0",
+  "description": "Polls local InverseFill server and fills SL/TP ticket fields swapped on the trading terminal.",
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

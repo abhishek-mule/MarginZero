@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>InverseFill — Market Order Control</title>
+<style>
+  :root {
+    --sell: #EF5350;
+    --sell-deep: #d63a3a;
+    --buy: #38BDF8;
+    --buy-deep: #0ea5e9;
+    --sl: #f0a04b;
+    --tp: #4aa8e0;
+    --vol: #f5c542;
+    --bg: #0d1117;
+    --card: #151b24;
+    --card-2: #10151d;
+    --border: #28313e;
+    --text: #f2f5f9;
+    --muted: #8b95a5;
+    --green: #2ecc71;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 16px calc(28px + env(safe-area-inset-bottom, 0px));
+    background:
+      radial-gradient(600px 300px at 15% -5%, rgba(56,189,248,.08), transparent 60%),
+      radial-gradient(600px 300px at 85% 0%, rgba(239,83,80,.07), transparent 60%),
+      var(--bg);
+  }
+  .wrap { width: 100%; max-width: 440px; }
+
+  /* Header */
+  .brand { display: flex; align-items: center; gap: 12px; margin: 6px 2px 4px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 14px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 900; color: #fff;
+    background: linear-gradient(135deg, var(--sell), var(--buy));
+    box-shadow: 0 6px 20px rgba(56,189,248,.25);
+  }
+  .brand h1 { font-size: 1.3rem; margin: 0; letter-spacing: .3px; }
+  .brand .sub { color: var(--muted); font-size: .82rem; margin-top: 1px; }
+  .brand .sub b { color: var(--text); }
+
+  /* Swap map */
+  .swap-banner {
+    background: rgba(245,197,66,.07);
+    border: 1px solid rgba(245,197,66,.28);
+    border-radius: 14px;
+    padding: 10px 12px;
+    font-size: .78rem;
+    color: #e8c96a;
+    margin: 12px 0 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 10px;
+  }
+  .swap-banner span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .swap-banner b { color: #fff; }
+
+  /* Cards */
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--card-2));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .card-title {
+    font-size: .72rem; font-weight: 700; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted);
+    margin: 0 0 10px 2px;
+  }
+  label.lbl { font-size: .8rem; color: var(--muted); display: block; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; }
+  input.server {
+    flex: 1; padding: 12px 14px; border-radius: 12px;
+    border: 1px solid var(--border); background: #0c1118;
+    color: var(--text); font-size: .92rem; min-width: 0;
+    transition: border-color .15s ease;
+  }
+  input.server:focus { outline: none; border-color: var(--buy); }
+  button.small {
+    padding: 0 18px; border-radius: 12px; border: 1px solid var(--border);
+    background: #232c38; color: #fff; font-weight: 700; cursor: pointer;
+    min-height: 46px; transition: background .15s ease, transform .08s ease;
+  }
+  button.small:active { background: #2e3947; transform: scale(.97); }
+  .status-line { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); margin-top: 10px; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #666; flex: none; transition: background .2s ease; }
+  .status-dot.ok { background: var(--green); box-shadow: 0 0 8px rgba(46,204,113,.8); }
+  .status-dot.bad { background: var(--sell); box-shadow: 0 0 8px rgba(239,83,80,.8); }
+  .status-dot.sending { background: var(--vol); box-shadow: 0 0 8px rgba(245,197,66,.8); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  .quote-line {
+    display: flex; align-items: center; gap: 8px;
+    font-size: .83rem; color: var(--muted); margin-top: 8px;
+    background: #0c1118; border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: #555; flex: none; }
+  .live-dot.on { background: var(--green); box-shadow: 0 0 8px rgba(46,204,113,.9); animation: pulse 1.6s infinite; }
+  #quoteText { color: var(--text); }
+
+  /* Fields */
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 6px; }
+  .field-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .field-name { font-weight: 700; font-size: .95rem; display: flex; align-items: center; gap: 7px; }
+  .step-n {
+    font-size: .68rem; font-weight: 800; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 7px;
+    width: 20px; height: 20px; display: inline-flex;
+    align-items: center; justify-content: center;
+  }
+  .field-name.vol { color: var(--vol); }
+  .field-name.sl { color: var(--sl); }
+  .field-name.tp { color: var(--tp); }
+  .field-name.cmt { color: var(--muted); }
+  .field-target { font-size: .72rem; color: var(--muted); background: #0c1118; border: 1px solid var(--border); padding: 2px 8px; border-radius: 20px; }
+  .step-row { display: flex; gap: 7px; align-items: stretch; }
+  .step-btn {
+    border: 1px solid var(--border); background: #0c1118; color: #fff;
+    border-radius: 14px; min-width: 54px; min-height: 56px;
+    font-size: 1.45rem; font-weight: 300; cursor: pointer; touch-action: manipulation;
+    transition: background .12s ease, transform .08s ease, border-color .12s ease;
+  }
+  .step-btn:hover { border-color: #3b4757; }
+  .step-btn:active { background: #232c38; transform: scale(.94); }
+  .clear-btn {
+    border: 1px solid transparent; background: transparent; color: var(--muted);
+    min-width: 42px; min-height: 56px; font-size: 1rem; cursor: pointer;
+    border-radius: 14px; transition: background .12s ease, color .12s ease;
+  }
+  .clear-btn:active { background: rgba(239,83,80,.15); color: var(--sell); }
+  input.big {
+    width: 100%; padding: 14px 10px; border-radius: 14px;
+    border: 2px solid var(--border); background: #0c1118;
+    color: #fff; font-size: 1.25rem; font-weight: 700;
+    text-align: center; letter-spacing: .5px; min-width: 0;
+    font-variant-numeric: tabular-nums;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  input.big:focus { outline: none; box-shadow: 0 0 0 3px rgba(255,255,255,.05); }
+  #volInput:focus { border-color: var(--vol); }
+  #slInput:focus { border-color: var(--sl); }
+  #tpInput:focus { border-color: var(--tp); }
+  #cmtInput:focus { border-color: var(--buy); }
+  input.big::placeholder { color: #4a5568; font-weight: 400; font-size: 1rem; }
+  input.comment {
+    width: 100%; padding: 13px 14px; border-radius: 14px;
+    border: 2px solid var(--border); background: #0c1118;
+    color: #fff; font-size: .95rem; min-width: 0;
+    transition: border-color .15s ease;
+  }
+  input.comment:focus { outline: none; border-color: var(--buy); }
+  input.comment::placeholder { color: #4a5568; }
+
+  /* Market buttons */
+  .market-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+  .market-btn {
+    border: none; border-radius: 16px; padding: 16px 0 13px;
+    color: #fff; font-weight: 800; font-size: 1rem; letter-spacing: .4px;
+    cursor: pointer; touch-action: manipulation;
+    transition: transform .08s ease, filter .15s ease, box-shadow .15s ease;
+  }
+  .market-btn:active { transform: scale(.96); filter: brightness(1.18); }
+  .market-btn small { display: block; font-size: .68rem; font-weight: 500; opacity: .92; margin-top: 3px; letter-spacing: .2px; }
+  #btnSellMarket { background: linear-gradient(180deg, #f2605e, var(--sell-deep)); box-shadow: 0 8px 24px rgba(239,83,80,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+  #btnBuyMarket { background: linear-gradient(180deg, #5cc8fa, var(--buy-deep)); box-shadow: 0 8px 24px rgba(56,189,248,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+
+  .hint { font-size: .78rem; color: var(--muted); text-align: center; margin: 12px 4px 0; line-height: 1.55; }
+  .hint b { color: var(--text); }
+  .alt-link { display: block; text-align: center; margin-top: 12px; font-size: .82rem; color: var(--buy); text-decoration: none; }
+  #toast {
+    position: fixed; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: #1d2530; border: 1px solid var(--border); color: #fff;
+    padding: 12px 20px; border-radius: 14px; font-size: .88rem;
+    opacity: 0; transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none; max-width: 92vw; text-align: center;
+    box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #log { font-size: .72rem; color: var(--muted); width: 100%; margin-top: 12px; font-variant-numeric: tabular-nums; }
+  #log div { padding: 5px 2px; border-bottom: 1px solid #1e2631; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <div class="logo">⇄</div>
+    <div>
+      <h1>InverseFill</h1>
+      <div class="sub">Ticket here → executes on the laptop, <b>swapped</b></div>
+    </div>
+  </div>
+
+  <div class="swap-banner">
+    <span>SL → site <b>TP</b></span><span>TP → site <b>SL</b></span>
+    <span>SELL → site <b>BUYS</b></span><span>BUY → site <b>SELLS</b></span>
+  </div>
+
+  <div class="card">
+    <p class="card-title">Connection</p>
+    <label class="lbl" for="serverUrl">Laptop server URL (same Wi-Fi)</label>
+    <div class="row">
+      <input id="serverUrl" class="server" type="url" placeholder="http://192.168.1.5:3000" autocomplete="off" />
+      <button class="small" id="testBtn">Test</button>
+    </div>
+    <div class="status-line"><span class="status-dot" id="dot"></span><span id="connText">Not tested</span></div>
+    <div class="quote-line"><span class="live-dot" id="liveDot"></span><span>Site&nbsp;<span id="quoteText">waiting for laptop ticket…</span></span></div>
+  </div>
+
+  <div class="card">
+    <p class="card-title">Order Ticket</p>
+    <!-- 1. Volume -->
+    <div class="field">
+      <div class="field-head">
+        <span class="field-name vol"><span class="step-n">1</span>📦 Volume</span>
+        <span class="field-target">→ site volume</span>
+      </div>
+      <div class="step-row">
+        <button class="step-btn" id="volMinus" aria-label="Decrease volume">−</button>
+        <input id="volInput" class="big" type="text" inputmode="decimal" value="0.01" autocomplete="off" />
+        <button class="step-btn" id="volPlus" aria-label="Increase volume">+</button>
+      </div>
+    </div>
+    <!-- 2. Stop Loss -->
+    <div class="field">
+      <div class="field-head">
+        <span class="field-name sl"><span class="step-n">2</span>🟠 Stop Loss</span>
+        <span class="field-target">→ site TP</span>
+      </div>
+      <div class="step-row">
+        <button class="step-btn" id="slMinus" aria-label="Decrease stop loss">−</button>
+        <input id="slInput" class="big" type="text" inputmode="decimal" placeholder="e.g. 1.08500" autocomplete="off" />
+        <button class="step-btn" id="slPlus" aria-label="Increase stop loss">+</button>
+        <button class="clear-btn" id="slClear" aria-label="Clear stop loss">✕</button>
+      </div>
+    </div>
+    <!-- 3. Take Profit -->
+    <div class="field">
+      <div class="field-head">
+        <span class="field-name tp"><span class="step-n">3</span>🔵 Take Profit</span>
+        <span class="field-target">→ site SL</span>
+      </div>
+      <div class="step-row">
+        <button class="step-btn" id="tpMinus" aria-label="Decrease take profit">−</button>
+        <input id="tpInput" class="big" type="text" inputmode="decimal" placeholder="e.g. 1.09500" autocomplete="off" />
+        <button class="step-btn" id="tpPlus" aria-label="Increase take profit">+</button>
+        <button class="clear-btn" id="tpClear" aria-label="Clear take profit">✕</button>
+      </div>
+    </div>
+    <!-- 4. Comment -->
+    <div class="field">
+      <div class="field-head">
+        <span class="field-name cmt"><span class="step-n">4</span>💬 Comment</span>
+        <span class="field-target">optional</span>
+      </div>
+      <input id="cmtInput" class="comment" type="text" placeholder="e.g. scalp-01" autocomplete="off" maxlength="200" />
+    </div>
+    <!-- 5. Market buttons -->
+    <div class="market-btns">
+      <button class="market-btn" id="btnSellMarket">SELL BY MARKET<small>taps → site BUYS</small></button>
+      <button class="market-btn" id="btnBuyMarket">BUY BY MARKET<small>taps → site SELLS</small></button>
+    </div>
+  </div>
+
+  <div class="hint">Typing auto-sends ~300ms after you stop. <b>− / + / ✕ act instantly.</b> Market buttons fill the ticket first, then click the <b>opposite</b> button on the site. Keep the New Order ticket open on the laptop.</div>
+  <a class="alt-link" href="/terminal.html">Open chart terminal →</a>
+  <div id="log"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+(function () {
+  const serverInput = document.getElementById('serverUrl');
+  const testBtn = document.getElementById('testBtn');
+  const dot = document.getElementById('dot');
+  const connText = document.getElementById('connText');
+  const toast = document.getElementById('toast');
+  const logBox = document.getElementById('log');
+  const volInput = document.getElementById('volInput');
+  const slInput = document.getElementById('slInput');
+  const tpInput = document.getElementById('tpInput');
+  const cmtInput = document.getElementById('cmtInput');
+
+  const DEBOUNCE_MS = 300;
+
+  const autoDefault = (location.hostname && location.hostname !== '')
+    ? 'http://' + location.hostname + ':3000'
+    : '';
+  serverInput.value = localStorage.getItem('inversefill_server') || autoDefault || 'http://192.168.1.5:3000';
+
+  function server() { return serverInput.value.trim().replace(/\/$/, ''); }
+  function persist() { localStorage.setItem('inversefill_server', server()); }
+
+  let toastTimer;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2400);
+  }
+
+  function addLog(msg) {
+    const d = document.createElement('div');
+    d.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+    logBox.prepend(d);
+    while (logBox.children.length > 20) logBox.lastChild.remove();
+  }
+
+  function setConn(state, text) {
+    dot.className = 'status-dot ' + (state || '');
+    connText.textContent = text;
+  }
+
+  async function testConnection() {
+    persist();
+    setConn('', 'Testing…');
+    try {
+      const r = await fetch(server() + '/health', { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      setConn('ok', 'Connected ✓');
+      showToast('Connected to laptop ✓');
+    } catch (e) {
+      setConn('bad', 'Unreachable — check IP, Wi-Fi & server running');
+      showToast('⚠️ Server unreachable. Check IP / Wi-Fi.');
+    }
+  }
+
+  function payload(action) {
+    const p = {
+      volume: volInput.value.trim(),
+      sl: slInput.value.trim(),
+      tp: tpInput.value.trim(),
+      comment: cmtInput.value.trim()
+    };
+    if (action) p.action = action;
+    return p;
+  }
+
+  // Every control propagates automatically; action = market-button tap (swapped on site).
+  async function send(action) {
+    persist();
+    const p = payload(action);
+    const t0 = performance.now();
+    setConn('sending', action ? 'Placing swapped market order…' : 'Sending…');
+    try {
+      const r = await fetch(server() + '/values', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p)
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (action === 'sell') {
+        setConn('ok', 'SELL sent ✓ (' + ms + ' ms) — site BUYS');
+        showToast('🔴 SELL BY MARKET → site BUYS (swapped)');
+        addLog('SELL MARKET vol="' + p.volume + '" sl="' + p.sl + '" tp="' + p.tp + '" (' + ms + ' ms)');
+      } else if (action === 'buy') {
+        setConn('ok', 'BUY sent ✓ (' + ms + ' ms) — site SELLS');
+        showToast('🔵 BUY BY MARKET → site SELLS (swapped)');
+        addLog('BUY MARKET vol="' + p.volume + '" sl="' + p.sl + '" tp="' + p.tp + '" (' + ms + ' ms)');
+      } else {
+        setConn('ok', 'Sent ✓ (' + ms + ' ms) — site follows');
+        addLog('Sent vol="' + p.volume + '" sl="' + p.sl + '" tp="' + p.tp + '" (' + ms + ' ms)');
+      }
+    } catch (e) {
+      setConn('bad', 'Send failed — server unreachable');
+      showToast('⚠️ Could not reach server. Check IP & Wi-Fi.');
+      addLog('FAILED: ' + e.message);
+    }
+  }
+
+  function stepNum(input, delta, decimals) {
+    const cur = parseFloat(input.value);
+    const base = isFinite(cur) ? cur : 0;
+    input.value = (base + delta).toFixed(decimals);
+    send(); // instant — no debounce on stepper taps
+  }
+
+  function clearInput(input) {
+    input.value = '';
+    send(); // '' clears the site field too
+    showToast('Cleared — site field clears too.');
+  }
+
+  let debounceTimer;
+  function onTyping() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => send(), DEBOUNCE_MS);
+  }
+
+  volInput.addEventListener('input', onTyping);
+  slInput.addEventListener('input', onTyping);
+  tpInput.addEventListener('input', onTyping);
+  cmtInput.addEventListener('input', onTyping);
+  document.getElementById('volMinus').addEventListener('click', () => {
+    const cur = parseFloat(volInput.value);
+    volInput.value = Math.max(0.01, ((isFinite(cur) ? cur : 0.01) - 0.01)).toFixed(2);
+    send();
+  });
+  document.getElementById('volPlus').addEventListener('click', () => stepNum(volInput, 0.01, 2));
+  document.getElementById('slMinus').addEventListener('click', () => stepNum(slInput, -0.01, 3));
+  document.getElementById('slPlus').addEventListener('click', () => stepNum(slInput, 0.01, 3));
+  document.getElementById('slClear').addEventListener('click', () => clearInput(slInput));
+  document.getElementById('tpMinus').addEventListener('click', () => stepNum(tpInput, -0.01, 3));
+  document.getElementById('tpPlus').addEventListener('click', () => stepNum(tpInput, 0.01, 3));
+  document.getElementById('tpClear').addEventListener('click', () => clearInput(tpInput));
+  document.getElementById('btnSellMarket').addEventListener('click', () => send('sell'));
+  document.getElementById('btnBuyMarket').addEventListener('click', () => send('buy'));
+  testBtn.addEventListener('click', testConnection);
+  serverInput.addEventListener('change', persist);
+
+  // Live site quote (pushed by laptop extension → GET /quote), polled every 3s
+  const quoteText = document.getElementById('quoteText');
+  const liveDot = document.getElementById('liveDot');
+  async function pollQuote() {
+    try {
+      const r = await fetch(server() + '/quote', { cache: 'no-store' });
+      if (!r.ok) return;
+      const q = await r.json();
+      if (q && q.bid) {
+        let s = 'Bid ' + q.bid + '  Ask ' + q.ask;
+        if (q.equity) s += '  • Eq ' + q.equity;
+        quoteText.textContent = s + ' (live)';
+        liveDot.classList.add('on');
+      }
+    } catch (e) { /* server unreachable — quote stays stale, send() already reports */ }
+  }
+  setInterval(pollQuote, 3000);
+  pollQuote();
+})();
+</script>
+</body>
+</html>
